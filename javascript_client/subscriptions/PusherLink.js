@@ -34,59 +34,68 @@
 //     // Do something with `data` and/or `errors`
 //   }})
 //
-var ApolloLink = require("apollo-link").ApolloLink
-var Observable = require("apollo-link").Observable
+var ApolloLink = require("apollo-link").ApolloLink;
+var Observable = require("apollo-link").Observable;
 
 class PusherLink extends ApolloLink {
   constructor(options) {
-    super()
+    super();
     // Retain a handle to the Pusher client
-    this.pusher = options.pusher
+    this.pusher = options.pusher;
   }
 
   request(operation, forward) {
-    return new Observable((observer) => {
+    return new Observable(observer => {
       // Check the result of the operation
-      forward(operation).subscribe({ next: (data) => {
-        // If the operation has the subscription header, it's a subscription
-        const subscriptionChannel = this._getSubscriptionChannel(operation)
-        if (subscriptionChannel) {
-          // This will keep pushing to `.next`
-          this._createSubscription(subscriptionChannel, observer)
+      forward(operation).subscribe(
+        data => {
+          const subscriptionChannel = this._getSubscriptionChannel(operation);
+          // If the operation has the subscription header, it's a subscription
+          if (subscriptionChannel) {
+            // This will keep pushing to `.next`
+            this._createSubscription(subscriptionChannel, observer);
+          } else {
+            // This isn't a subscription,
+            // So pass the data along and close the observer.
+            observer.next(data);
+            observer.complete();
+          }
+        },
+        _error => {},
+        () => {
+          const subscriptionChannel = this._getSubscriptionChannel(operation);
+          if (subscriptionChannel) {
+            this.pusher.unsubscribe(subscriptionChannel);
+          }
         }
-        else {
-          // This isn't a subscription,
-          // So pass the data along and close the observer.
-          observer.next(data)
-          observer.complete()
-        }
-      }})
-    })
+      );
+    });
   }
 
   _getSubscriptionChannel(operation) {
-    const response = operation.getContext().response
+    const response = operation.getContext().response;
     // Check to see if the response has the header
-    const subscriptionChannel = response.headers.get("X-Subscription-ID")
-    return subscriptionChannel
+    const subscriptionChannel = response.headers.get("X-Subscription-ID");
+    return subscriptionChannel;
   }
 
   _createSubscription(subscriptionChannel, observer) {
-    const pusherChannel = this.pusher.subscribe(subscriptionChannel)
+    const pusher = this.pusher;
+    const pusherChannel = pusher.subscribe(subscriptionChannel);
     // Subscribe for more update
     pusherChannel.bind("update", function(payload) {
       if (!payload.more) {
         // This is the end, the server says to unsubscribe
-        pusher.unsubscribe(subscriptionChannel)
-        observer.complete()
+        pusher.unsubscribe(subscriptionChannel);
+        observer.complete();
       }
-      const result = payload.result
+      const result = payload.result;
       if (result) {
         // Send the new response to listeners
-        observer.next(result)
+        observer.next(result);
       }
-    })
+    });
   }
 }
 
-module.exports = PusherLink
+module.exports = PusherLink;
